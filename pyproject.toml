@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "contextseqrec-etl"
 version = "0.1.0"
 description = "Standalone real-estate ETL for ContextSeqRec"
+readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
   "h3==4.5.0",
