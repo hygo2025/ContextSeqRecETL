@@ -241,6 +241,41 @@ A publicação é atômica: o pickle é escrito em um temporário no diretório 
 
 `dataset.pkl` usa pickle. Abra apenas arquivos produzidos por este ETL ou por uma fonte confiável.
 
+## Etapa 3 (opcional): exportar features de item
+
+Gera uma matriz densa de atributos de item `[num_items + 1, F]` alinhada ao
+`smap` do `dataset.pkl`, consumida opcionalmente pelo `ContextSeqRec` em
+`sampling.item_features_path`. É pandas puro; não usa Spark.
+
+A linha `0` é o item de padding e é sempre zero. A linha `i` (1..M) contém os
+atributos do item denso `i` usado pelo modelo. O alinhamento é feito assim:
+
+```text
+events.parquet: sid -> canonical_listing_id
+items.parquet : canonical_listing_id -> atributos
+dataset.pkl   : smap[sid] = id denso
+```
+
+Nunca se usa `listing_id_numeric` (regional, sem offset). As transformações são
+fixas, sem estatística ajustada: `log1p` em preço/áreas, indicadores de missing,
+one-hot de categóricos, multi-hot de amenities e coordenadas com indicador de
+ausência. Isso mantém a exportação determinística e sem vazamento de
+validação/teste (nada depende do split, de contagens de interação ou de rótulos).
+
+```bash
+cd /home/hygo2025/Development/projects/ContextSeqRecETL
+.venv/bin/contextseqrec-etl export-item-features \
+  --dataset "$CONTEXTSEQREC_ROOT/data/dataset.pkl" \
+  --source-dir "$ETL_WORK" \
+  --output "$CONTEXTSEQREC_ROOT/data/item_features.npy" \
+  --amenities-top 64
+```
+
+O comando recusa sobrescrever a saída; use `--force` para substituir. Além do
+`.npy`, grava um `item_features.npy.manifest.json` com hashes das entradas,
+número de itens, dimensões e a lista de colunas. Guarde o `.npy`, o manifesto e o
+`dataset.pkl` como um par inseparável e versionado.
+
 ## Conferir o resultado
 
 Registre o SHA-256 do arquivo:
@@ -289,6 +324,12 @@ Opções do preprocessamento:
 
 ```bash
 .venv/bin/contextseqrec-etl preprocess --help
+```
+
+Opções da exportação de features de item:
+
+```bash
+.venv/bin/contextseqrec-etl export-item-features --help
 ```
 
 ## Problemas comuns

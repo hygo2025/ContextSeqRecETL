@@ -4,6 +4,7 @@ import argparse
 
 from contextseqrec_etl import __version__
 from contextseqrec_etl.convert import configure_parser as configure_convert_parser
+from contextseqrec_etl.export_features import configure_parser as configure_export_parser
 from contextseqrec_etl.preprocess import configure_parser as configure_preprocess_parser
 
 
@@ -16,6 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     configure_convert_parser(subparsers)
     configure_preprocess_parser(subparsers)
+    configure_export_parser(subparsers)
     return parser
 
 
