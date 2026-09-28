@@ -11,6 +11,8 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
+from contextseqrec_etl.export_features import write_smap_sidecar
+
 CANONICAL_BEHAVIOR_IDS = {
     "RankingClicked": 1,
     "ListingRendered": 2,
@@ -232,7 +234,9 @@ def run(args: argparse.Namespace) -> None:
     output = args.output.expanduser().resolve()
     dataset = build_dataset(source_dir, args.min_user_events, args.target_behavior)
     write_dataset(dataset, output, args.force)
+    smap_manifest = write_smap_sidecar(dataset["smap"], output, args.force)
     print(f"Dataset written atomically to {output}")
+    print(f"  smap sidecar: {output}.smap.npz ({smap_manifest['rows']:_} rows)")
     print(f"  sessions: {len(dataset['umap']):_}")
     print(f"  items: {len(dataset['smap']):_}")
     print(f"  target holdouts: {len(dataset['val']):_}")

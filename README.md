@@ -239,6 +239,11 @@ O comando recusa sobrescrever um arquivo existente. Para substituir conscienteme
 
 A publicação é atômica: o pickle é escrito em um temporário no diretório de destino e renomeado somente depois de concluído.
 
+Além da saída `dataset.pkl`, o preprocessamento publica `dataset.pkl.smap.npz` e
+`dataset.pkl.smap.manifest.json`. O sidecar contém somente a relação compacta
+`sid → id denso`; a exportação de features usa-o para evitar carregar os vetores
+completos de sessões do pickle.
+
 `dataset.pkl` usa pickle. Abra apenas arquivos produzidos por este ETL ou por uma fonte confiável.
 
 ## Etapa 3 (opcional): exportar features de item
@@ -271,10 +276,17 @@ cd /home/hygo2025/Development/projects/ContextSeqRecETL
   --amenities-top 64
 ```
 
-O comando recusa sobrescrever a saída; use `--force` para substituir. Além do
-`.npy`, grava um `item_features.npy.manifest.json` com hashes das entradas,
-número de itens, dimensões e a lista de colunas. Guarde o `.npy`, o manifesto e o
-`dataset.pkl` como um par inseparável e versionado.
+Categorias e amenities usam vocabulários derivados do catálogo inteiro do ETL. O
+manifesto declara o regime `catalog_snapshot_transductive`: a exportação não usa
+contagens de interação, split nem rótulos, mas também não garante que o snapshot
+do anúncio seja anterior a cada evento. Para inferência temporal estrita, gere um
+catálogo *as-of* antes de exportar as features.
+
+O comando falha se um item do `smap` não tiver catálogo correspondente ou se o
+catálogo contiver `canonical_listing_id` duplicado. Além do `.npy`, grava um
+`item_features.npy.manifest.json` com hashes das entradas, número de itens,
+dimensões e a lista de colunas. Guarde o `.npy`, o manifesto, o sidecar de
+`smap` e o `dataset.pkl` como um conjunto inseparável e versionado.
 
 ## Conferir o resultado
 

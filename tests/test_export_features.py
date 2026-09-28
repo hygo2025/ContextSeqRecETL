@@ -11,8 +11,9 @@ import pytest
 from contextseqrec_etl.export_features import (
     _parse_amenities,
     export_item_features,
-    load_smap,
+    load_smap_sidecar,
     sid_to_canonical,
+    write_smap_sidecar,
 )
 
 
@@ -49,6 +50,7 @@ def _write_dataset(path: Path, smap: dict[int, int]) -> None:
     }
     with path.open("wb") as stream:
         pickle.dump(payload, stream)
+    write_smap_sidecar(smap, path, force=False)
 
 
 @pytest.fixture
@@ -146,14 +148,16 @@ def test_parse_amenities_handles_edge_cases() -> None:
     assert _parse_amenities("garbage(") == []
 
 
-def test_load_smap_requires_contiguous_ids(tmp_path: Path) -> None:
+def test_load_smap_sidecar_requires_contiguous_ids(tmp_path: Path) -> None:
     good = tmp_path / "good.pkl"
     _write_dataset(good, {7: 1, 8: 2, 9: 3})
-    assert load_smap(good) == {7: 1, 8: 2, 9: 3}
+    assert load_smap_sidecar(good) == {7: 1, 8: 2, 9: 3}
     bad = tmp_path / "bad.pkl"
-    _write_dataset(bad, {7: 1, 8: 3})
+    payload = {"smap": {7: 1, 8: 3}}
+    with bad.open("wb") as stream:
+        pickle.dump(payload, stream)
     with pytest.raises(ValueError, match="contiguous"):
-        load_smap(bad)
+        write_smap_sidecar(payload["smap"], bad, force=False)
 
 
 def test_sid_to_canonical_detects_conflicts(tmp_path: Path) -> None:
@@ -202,7 +206,7 @@ def test_export_produces_aligned_matrix(synthetic: dict[str, Path]) -> None:
     assert matrix[3, index["market_segment=SALE_COMMERCIAL"]] == 1.0
 
     # Manifest integrity.
-    assert manifest["schema_version"] == "contextseqrec-item-features-v1"
+    assert manifest["schema_version"] == "contextseqrec-item-features-v2"
     assert manifest["dimensions"] == matrix.shape[1]
     assert len(columns) == matrix.shape[1]
     manifest_path = Path(str(synthetic["output"]) + ".manifest.json")
@@ -235,3 +239,53 @@ def test_matrix_matches_contextseqrec_loader_contract(synthetic: dict[str, Path]
     assert matrix.dtype == np.float32
     assert matrix.ndim == 2
     assert np.allclose(matrix[0], 0.0)
+
+
+
+def test_export_rejects_model_item_missing_from_catalog(synthetic: dict[str, Path]) -> None:
+    items = pd.read_parquet(synthetic["source"] / "items.parquet")
+    items = items[items["canonical_listing_id"] != "CANON_C"]
+    items.to_parquet(synthetic["source"] / "items.parquet")
+    with pytest.raises(ValueError, match="absent from items.parquet"):
+        export_item_features(
+            synthetic["dataset"], synthetic["source"], synthetic["output"], 64, force=False
+        )
+
+
+def test_export_rejects_duplicate_catalog_ids(synthetic: dict[str, Path]) -> None:
+    items = pd.read_parquet(synthetic["source"] / "items.parquet")
+    pd.concat((items, items.iloc[[0]]), ignore_index=True).to_parquet(
+        synthetic["source"] / "items.parquet"
+    )
+    with pytest.raises(ValueError, match="duplicate canonical"):
+        export_item_features(
+            synthetic["dataset"], synthetic["source"], synthetic["output"], 64, force=False
+        )
+
+
+def test_manifest_hashes_single_file_parquet_inputs(synthetic: dict[str, Path]) -> None:
+    manifest = export_item_features(
+        synthetic["dataset"], synthetic["source"], synthetic["output"], 64, force=False
+    )
+    import hashlib
+
+    def digest(path: Path) -> str:
+        value = hashlib.sha256()
+        value.update(path.read_bytes())
+        return value.hexdigest()
+
+    assert manifest["inputs"]["events_parquet_sha256"] == digest(
+        synthetic["source"] / "events.parquet"
+    )
+    assert manifest["inputs"]["items_parquet_sha256"] == digest(
+        synthetic["source"] / "items.parquet"
+    )
+
+
+def test_export_rejects_smap_sidecar_for_different_dataset(synthetic: dict[str, Path]) -> None:
+    with synthetic["dataset"].open("ab") as stream:
+        stream.write(b"changed")
+    with pytest.raises(ValueError, match="different dataset"):
+        export_item_features(
+            synthetic["dataset"], synthetic["source"], synthetic["output"], 64, force=False
+        )
